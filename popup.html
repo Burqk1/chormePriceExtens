@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      width: 340px;
+      font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: #fff;
+      color: #222;
+    }
+
+    /* --- Header --- */
+    .header {
+      padding: 16px 18px;
+      border-bottom: 1px solid #eee;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .header-left svg { color: #f27a1a; }
+
+    .header-left span {
+      font-size: 14px;
+      font-weight: 600;
+      color: #222;
+    }
+
+    .badge {
+      font-size: 10px;
+      font-weight: 600;
+      padding: 3px 8px;
+      border-radius: 4px;
+      background: #f0f0f0;
+      color: #888;
+    }
+
+    .badge.pro {
+      background: #f27a1a;
+      color: #fff;
+    }
+
+    /* --- Active product --- */
+    .active {
+      padding: 14px 18px;
+      border-bottom: 1px solid #eee;
+      display: none;
+    }
+
+    .active.visible { display: block; }
+
+    .active-label {
+      font-size: 10px;
+      color: #999;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 4px;
+    }
+
+    .active-name {
+      font-size: 13px;
+      color: #333;
+      line-height: 1.4;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+    }
+
+    .active-price {
+      font-size: 16px;
+      font-weight: 700;
+      color: #f27a1a;
+      margin-top: 4px;
+    }
+
+    /* --- Stats --- */
+    .stats {
+      display: flex;
+      border-bottom: 1px solid #eee;
+    }
+
+    .stat {
+      flex: 1;
+      padding: 14px 0;
+      text-align: center;
+      border-right: 1px solid #eee;
+    }
+
+    .stat:last-child { border-right: none; }
+
+    .stat-val {
+      font-size: 18px;
+      font-weight: 700;
+      color: #222;
+    }
+
+    .stat-label {
+      font-size: 10px;
+      color: #999;
+      margin-top: 2px;
+    }
+
+    /* --- Product list --- */
+    .list-header {
+      padding: 12px 18px 6px;
+      font-size: 11px;
+      color: #999;
+      font-weight: 500;
+    }
+
+    .list {
+      max-height: 180px;
+      overflow-y: auto;
+      padding: 0 18px 8px;
+    }
+
+    .list::-webkit-scrollbar { width: 3px; }
+    .list::-webkit-scrollbar-thumb { background: #ddd; border-radius: 3px; }
+
+    .item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 9px 0;
+      border-bottom: 1px solid #f5f5f5;
+      cursor: pointer;
+    }
+
+    .item:last-child { border-bottom: none; }
+    .item:hover .item-name { color: #f27a1a; }
+
+    .item-info { flex: 1; min-width: 0; }
+
+    .item-name {
+      font-size: 12px;
+      color: #333;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      transition: color 0.15s;
+    }
+
+    .item-meta {
+      font-size: 10px;
+      color: #bbb;
+      margin-top: 1px;
+    }
+
+    .item-price {
+      font-size: 13px;
+      font-weight: 600;
+      color: #222;
+      white-space: nowrap;
+    }
+
+    .item-del {
+      background: none;
+      border: none;
+      color: #ccc;
+      cursor: pointer;
+      padding: 2px;
+      display: flex;
+      transition: color 0.15s;
+    }
+
+    .item-del:hover { color: #e74c3c; }
+
+    .empty {
+      text-align: center;
+      padding: 28px 18px;
+      color: #bbb;
+      font-size: 12px;
+      line-height: 1.6;
+    }
+
+    /* --- Upgrade --- */
+    .upgrade {
+      margin: 8px 18px 14px;
+      padding: 14px 16px;
+      border: 1px solid #eee;
+      border-radius: 8px;
+      text-align: center;
+    }
+
+    .upgrade.hidden { display: none; }
+
+    .upgrade p {
+      font-size: 12px;
+      color: #666;
+      margin-bottom: 10px;
+      line-height: 1.5;
+    }
+
+    .upgrade-btn {
+      width: 100%;
+      padding: 10px;
+      background: #f27a1a;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    .upgrade-btn:hover { background: #e06c10; }
+
+    /* --- Manage --- */
+    .manage {
+      margin: 8px 18px 14px;
+      padding: 12px 14px;
+      border: 1px solid #eee;
+      border-radius: 8px;
+      display: none;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .manage.visible { display: flex; }
+
+    .manage-info {
+      font-size: 12px;
+      color: #333;
+    }
+
+    .manage-info span {
+      display: block;
+      font-size: 10px;
+      color: #999;
+      margin-top: 2px;
+    }
+
+    .manage-cancel {
+      background: none;
+      border: 1px solid #ddd;
+      color: #999;
+      padding: 5px 12px;
+      border-radius: 5px;
+      font-size: 11px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .manage-cancel:hover {
+      border-color: #e74c3c;
+      color: #e74c3c;
+    }
+
+    /* --- Footer --- */
+    .footer {
+      padding: 10px 18px;
+      border-top: 1px solid #eee;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .footer span { font-size: 10px; color: #ccc; }
+
+    .footer a {
+      font-size: 10px;
+      color: #999;
+      text-decoration: none;
+    }
+
+    .footer a:hover { color: #f27a1a; }
+
+    .sites {
+      padding: 10px 18px;
+      border-top: 1px solid #eee;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .sites-label {
+      font-size: 10px;
+      color: #bbb;
+      width: 100%;
+      margin-bottom: 2px;
+    }
+
+    .site-tag {
+      font-size: 10px;
+      padding: 2px 8px;
+      border-radius: 4px;
+      background: #f5f5f5;
+      color: #666;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <div class="header-left">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+      <span>Fiyat Takip</span>
+    </div>
+    <div class="badge" id="badge">FREE</div>
+  </div>
+
+  <div class="active" id="active">
+    <div class="active-label">Aktif ürün</div>
+    <div class="active-name" id="active-name"></div>
+    <div class="active-price" id="active-price"></div>
+  </div>
+
+  <div class="stats">
+    <div class="stat">
+      <div class="stat-val" id="s-products">0</div>
+      <div class="stat-label">Ürün</div>
+    </div>
+    <div class="stat">
+      <div class="stat-val" id="s-points">0</div>
+      <div class="stat-label">Kayıt</div>
+    </div>
+    <div class="stat">
+      <div class="stat-val" id="s-days">0</div>
+      <div class="stat-label">Gün</div>
+    </div>
+  </div>
+
+  <div class="list-header">Takip edilen ürünler</div>
+  <div class="list" id="list">
+    <div class="empty" id="empty">
+      Henüz ürün yok.<br>Trendyol'da bir ürün sayfasını ziyaret edin.
+    </div>
+  </div>
+
+  <div class="upgrade" id="upgrade-card">
+    <p>30 günlük fiyat geçmişi ve gelişmiş istatistikler</p>
+    <button class="upgrade-btn" id="upgrade-btn">Pro'ya Yükselt — ₺29/ay</button>
+  </div>
+
+  <div class="manage" id="manage-card">
+    <div class="manage-info">
+      Pro aktif
+      <span id="pro-exp"></span>
+    </div>
+    <button class="manage-cancel" id="cancel-btn">İptal et</button>
+  </div>
+
+  <div class="sites">
+    <span class="sites-label">Desteklenen siteler</span>
+    <span class="site-tag">Trendyol</span>
+    <span class="site-tag">Hepsiburada</span>
+    <span class="site-tag">Amazon TR</span>
+  </div>
+
+  <div class="footer">
+    <span>v2.0.0</span>
+    <a href="https://www.trendyol.com" target="_blank">trendyol.com</a>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
