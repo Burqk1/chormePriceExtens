@@ -1,3 +1,32 @@
+// Ürün ID'sini (ty-/hb-/az- önekli) sekme URL'inden çıkarır; content.js adapter'larıyla aynı kurallar
+function productIdFromUrl(url) {
+  let u;
+  try { u = new URL(url); } catch { return null; }
+  const h = u.hostname;
+  let m;
+  if (h.includes("trendyol")) {
+    m = u.pathname.match(/-p-(\d+)/);
+    return m ? "ty-" + m[1] : null;
+  }
+  if (h.includes("hepsiburada")) {
+    m = u.pathname.match(/-p-([A-Za-z0-9]+)/);
+    return m ? "hb-" + m[1] : null;
+  }
+  if (h.includes("amazon.com.tr")) {
+    m = u.pathname.match(/\/dp\/([A-Z0-9]+)/);
+    return m ? "az-" + m[1] : null;
+  }
+  return null;
+}
+
+// Önekli ID'den ürünün kendi sitesindeki adresini üretir
+function productUrl(id) {
+  if (id.startsWith("hb-")) return "https://www.hepsiburada.com/x-p-" + id.slice(3);
+  if (id.startsWith("az-")) return "https://www.amazon.com.tr/dp/" + id.slice(3);
+  if (id.startsWith("ty-")) return "https://www.trendyol.com/x/x-p-" + id.slice(3);
+  return "https://www.trendyol.com/x/x-p-" + id; // eski, öneksiz kayıtlar
+}
+
 document.addEventListener("DOMContentLoaded", async () => {
   const sub = await chrome.runtime.sendMessage({ type: "GET_SUBSCRIPTION" });
   const isPro =
@@ -36,7 +65,25 @@ document.addEventListener("DOMContentLoaded", async () => {
       name: last.name || "Ürün #" + key.replace("price_", ""),
       price: last.price,
       entries: history.length,
+      local: true,
     });
+  }
+
+  // Sunucu modu: yerelde olmayan, sunucuda kayıtlı ürünleri de listele
+  const serverProducts = await chrome.runtime.sendMessage({ type: "GET_SERVER_PRODUCTS" });
+  if (Array.isArray(serverProducts)) {
+    for (const sp of serverProducts) {
+      if (!sp.productId || sp.lastPrice == null) continue;
+      if (products.some((p) => p.id === sp.productId)) continue;
+      totalPoints += sp.entries || 0;
+      products.push({
+        id: sp.productId,
+        name: sp.name || "Ürün #" + sp.productId,
+        price: sp.lastPrice,
+        entries: sp.entries || 0,
+        local: false,
+      });
+    }
   }
 
   document.getElementById("s-products").textContent = products.length;
@@ -49,14 +96,16 @@ document.addEventListener("DOMContentLoaded", async () => {
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (tab && tab.url) {
-      const m = tab.url.match(/-p-(\d+)/);
-      if (m) {
-        const pd = allData["price_" + m[1]];
-        if (pd && pd.length) {
+      const pid = productIdFromUrl(tab.url);
+      if (pid) {
+        // GET_HISTORY sunucu açıksa sunucudan, değilse yerelden okur
+        const pd = await chrome.runtime.sendMessage({ type: "GET_HISTORY", productId: pid });
+        if (Array.isArray(pd) && pd.length) {
           const last = pd[pd.length - 1];
+          const known = products.find((p) => p.id === pid);
           document.getElementById("active").classList.add("visible");
           document.getElementById("active-name").textContent =
-            last.name || "Ürün #" + m[1];
+            last.name || (known && known.name) || "Ürün #" + pid;
           document.getElementById("active-price").textContent =
             "\u20BA" + last.price.toLocaleString("tr-TR");
         }
@@ -127,12 +176,13 @@ document.addEventListener("DOMContentLoaded", async () => {
       });
 
       row.addEventListener("click", () => {
-        chrome.tabs.create({ url: "https://www.trendyol.com/x/x-p-" + p.id });
+        chrome.tabs.create({ url: productUrl(p.id) });
       });
 
       row.appendChild(info);
       row.appendChild(price);
-      row.appendChild(del);
+      // Sunucudaki kayıtlar için silme uç noktası yok; yalnızca yerel kayıtlar kaldırılabilir
+      if (p.local) row.appendChild(del);
       listEl.appendChild(row);
     }
   }

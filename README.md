@@ -145,7 +145,8 @@ Content script ve popup, background.js ile `chrome.runtime.sendMessage` üzerind
 | Mesaj Tipi | Yön | Açıklama |
 |---|---|---|
 | `TRACK_PRICE` | content → bg | Fiyat kaydı |
-| `GET_HISTORY` | content → bg | Fiyat geçmişi getir |
+| `GET_HISTORY` | content/popup → bg | Fiyat geçmişi getir |
+| `GET_SERVER_PRODUCTS` | popup → bg | Sunucudaki ürün listesi (sunucu kapalıysa boş) |
 | `GET_SUBSCRIPTION` | content/popup → bg | Abonelik durumu |
 | `UPGRADE_PRO` | content/popup → bg | Pro'ya yükselt |
 | `DOWNGRADE_FREE` | popup → bg | Free'ye düşür |
@@ -174,12 +175,12 @@ Her ürün için array: `[{ date: "2026-03-24", price: 43999, name: "Samsung..."
 
 Aynı gün içinde tekrar kayıt gelirse o günün kaydı güncellenir (günde bir veri noktası).
 
-> **Dikkat:** API'ye kayıt başarılı olursa veri yalnızca sunucuya yazılır, `chrome.storage.local`'e yazılmaz. Popup ve periyodik alarm kontrolü sadece yerel veriyi okuduğu için, sunucu çalışırken bu ikisi boş/etkisiz kalır.
+> **Dikkat:** API'ye kayıt başarılı olursa veri yalnızca sunucuya yazılır, `chrome.storage.local`'e yazılmaz. Bu yüzden popup ve periyodik alarm kontrolü geçmişi önce sunucudan okur (`GET_HISTORY` / `GET_SERVER_PRODUCTS`), sunucu kapalıysa yerel veriye düşer. Yerel ve sunucu kayıtları birbirine senkronize edilmez.
 
 **Alarm Sistemi:**
 - Kullanıcı widget'tan hedef fiyat belirler
 - Ürün sayfası her açıldığında (`TRACK_PRICE`) güncel fiyat hedefle karşılaştırılır
-- Ayrıca `chrome.alarms` ile her 4 saatte bir kontrol yapılır; bu kontrol sayfaları yeniden çekmez, yerel geçmişteki son kayıtlı fiyata bakar
+- Ayrıca `chrome.alarms` ile her 4 saatte bir kontrol yapılır; bu kontrol sayfaları yeniden çekmez, son kayıtlı fiyata bakar (sunucu açıksa sunucudan, değilse yerelden)
 - Fiyat hedefe eşit veya altındaysa `chrome.notifications` ile bildirim gönderilir
 - Bildirim gönderildikten sonra alarm otomatik silinir
 
@@ -220,9 +221,15 @@ Uzantı ikonuna tıklanınca açılan panel:
 - Pro yükseltme / iptal etme
 - Desteklenen siteler listesi
 
-Popup yalnızca `chrome.storage.local` içindeki verileri listeler. Bilinen kısıtlar:
-- "Aktif ürün" kartı sekme URL'indeki `-p-{ID}` numarasını önek olmadan (`price_{ID}`) arar; kayıtlar önekli tutulduğu için bu kart şu an görünmez.
-- Listedeki bir ürüne tıklamak her zaman `https://www.trendyol.com/x/x-p-{id}` adresini açar; önekli ID'ler ve Hepsiburada/Amazon ürünleri için bu link doğru sayfaya gitmez.
+Popup `chrome.storage.local` içindeki ürünleri ve (sunucu çalışıyorsa) sunucudaki ürünleri birlikte listeler. "Aktif ürün" kartı sekme URL'inden önekli ID'yi (`ty-`/`hb-`/`az-`, content.js ile aynı kurallarla) çıkarıp geçmişi `GET_HISTORY` ile alır. Listedeki bir ürüne tıklamak ID önekine göre doğru siteyi açar:
+- `ty-{ID}` → `https://www.trendyol.com/x/x-p-{ID}`
+- `hb-{ID}` → `https://www.hepsiburada.com/x-p-{ID}`
+- `az-{ASIN}` → `https://www.amazon.com.tr/dp/{ASIN}`
+
+Bilinen kısıtlar:
+- Trendyol ve Hepsiburada linkleri gerçek ürün slug'ı yerine `x` yer tutucusuyla kurulur; sitenin bu adresi doğru ürüne yönlendirdiği varsayılır (tarayıcıda doğrulanmadı).
+- Hepsiburada'da ID URL'den değil `data-product-id` attribute'undan alındıysa, "Aktif ürün" kartı bu ürünü URL'den eşleştiremez.
+- Sunucudan gelen ürünler için "kaç gündür takip" istatistiği hesaplanmaz (`/api/products` ilk kayıt tarihini döndürmez) ve × silme butonu gösterilmez (sunucuda silme uç noktası yok).
 
 #### `server/server.js` — Backend API (Opsiyonel)
 
@@ -294,9 +301,13 @@ npm start
 Sunucu `http://localhost:3000` adresinde çalışır.
 
 ### Demo Veri (Test İçin)
-`seed-demo-data.js`, son 31 gün için rastgele fiyatlar üretip `chrome.storage.local`'e yazar. `chrome.storage` normal sayfa konsolunda erişilebilir olmadığından, script'i çalıştırırken DevTools Console'daki bağlam seçicisinden uzantının content script bağlamını ("Fiyat Takip — Trendyol & Hepsiburada") seçmek gerekir. Sonra sayfayı yenile.
+`seed-demo-data.js`, son 31 gün için rastgele fiyatlar üretip `chrome.storage.local`'e, uzantının kullandığı önekli anahtara (`price_ty-{ID}`, `price_hb-{ID}` veya `price_az-{ASIN}`) yazar. Çalıştırmak için:
 
-> **Not:** Script yalnızca `-p-{ID}` içeren URL'lerde çalışır ve veriyi `price_{ID}` anahtarına önek olmadan yazar. Uzantı ise `price_ty-{ID}` / `price_hb-{ID}` anahtarlarını okuduğu için, script düzeltilmeden demo veri widget'ta görünmez. Ayrıca yerel sunucu çalışıyorsa widget geçmişi sunucudan okur.
+1. Desteklenen bir sitede (Trendyol, Hepsiburada, Amazon TR) bir ürün sayfası aç.
+2. DevTools Console'u aç; üstteki bağlam seçicisinden (varsayılan `top`) uzantının content script bağlamını seç ("Fiyat Takip — Trendyol, Hepsiburada & Amazon TR"). `chrome.storage` normal sayfa bağlamında yoktur; yanlış bağlamda script bunu söyleyip durur.
+3. `seed-demo-data.js` içeriğini yapıştırıp çalıştır, sonra sayfayı yenile.
+
+> **Not:** Yerel sunucu çalışıyorsa widget geçmişi sunucudan okur; demo veriyi görmek için sunucuyu kapat.
 
 ---
 
@@ -309,4 +320,3 @@ Sunucu `http://localhost:3000` adresinde çalışır.
 - **Veri Temizliği**: Yeni kayıt yazılırken 90 günden eski kayıtlar silinir (hem yerelde hem sunucuda)
 - **Fiyat Parsing**: Türkçe format (nokta=binlik, virgül=ondalık) doğru parse edilir
 - **Selector Fallback**: Trendyol'da bilinen CSS selector'lar bulamazsa span'ları tarayarak fiyat bulur
-- **Manifest adı**: `manifest.json` içindeki ad ve açıklama yalnızca Trendyol ve Hepsiburada'dan bahseder, ancak Amazon TR de host izinlerinde ve content script eşleşmelerinde vardır

@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Fiyat Takip — Trendyol & Hepsiburada",
+  "name": "Fiyat Takip — Trendyol, Hepsiburada & Amazon TR",
   "version": "2.0.0",
-  "description": "Trendyol ve Hepsiburada için fiyat geçmişi takip ve karşılaştırma aracı",
+  "description": "Trendyol, Hepsiburada ve Amazon TR için fiyat geçmişi takip ve karşılaştırma aracı",
   "permissions": ["storage", "activeTab", "tabs", "alarms", "notifications"],
   "host_permissions": [
     "https://www.trendyol.com/*",

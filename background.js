@@ -32,6 +32,14 @@ async function fetchHistory(productId) {
   return getLocalHistory(productId);
 }
 
+async function fetchServerProducts() {
+  try {
+    const res = await fetch(`${API_BASE}/products`);
+    if (res.ok) return await res.json();
+  } catch {}
+  return [];
+}
+
 async function saveLocalPrice(data) {
   const key = `price_${data.productId}`;
   const result = await chrome.storage.local.get(key);
@@ -111,8 +119,8 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (!productIds.length) return;
 
   for (const productId of productIds) {
-    const history = await getLocalHistory(productId);
-    if (history.length) {
+    const history = await fetchHistory(productId);
+    if (Array.isArray(history) && history.length) {
       const lastPrice = history[history.length - 1].price;
       await checkAlerts(productId, lastPrice);
     }
@@ -132,6 +140,11 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
   if (message.type === "GET_HISTORY") {
     fetchHistory(message.productId).then(sendResponse);
+    return true;
+  }
+
+  if (message.type === "GET_SERVER_PRODUCTS") {
+    fetchServerProducts().then(sendResponse);
     return true;
   }
 
