@@ -7,7 +7,7 @@ Trendyol, Hepsiburada ve Amazon TR ürün sayfalarında fiyat geçmişini takip 
 ## Proje Yapısı
 
 ```
-chormeexten/
+chormePriceExtens/
 │
 ├── manifest.json            ← Uzantı tanım dosyası (Manifest V3)
 ├── background.js            ← Service Worker — arka plan işlemleri
@@ -50,7 +50,7 @@ Kullanıcı ürün sayfasını açar
         ▼
    background.js'e mesaj gönderilir
         │
-        ├── Fiyat kaydedilir (API veya localStorage)
+        ├── Fiyat kaydedilir (API veya chrome.storage.local)
         ├── Geçmiş verisi çekilir
         ├── Abonelik durumu kontrol edilir
         │
@@ -83,17 +83,19 @@ SITE tespit edilir (hostname'e göre)
         │
         ▼
 Her site için ayrı adapter objesi var:
-  - trendyol:    -p-{ID} URL pattern, .prc-dsc fiyat selector
-  - hepsiburada: -p-{ID} veya data-product-id attribute
-  - amazon:      /dp/{ASIN} URL pattern
+  - trendyol:    -p-{ID} URL pattern, .prc-dsc fiyat selector  → ID: ty-{ID}
+  - hepsiburada: -p-{ID} veya data-product-id attribute        → ID: hb-{ID}
+  - amazon:      /dp/{ASIN} URL pattern                        → ID: az-{ASIN}
 ```
+
+Ürün ID'leri site önekiyle (`ty-`, `hb-`, `az-`) saklanır, böylece farklı sitelerdeki aynı numaralar çakışmaz.
 
 Her adapter şu methodları sağlar:
 - `getProductId()` → Ürün ID çıkarma
 - `getProductName()` → Ürün adı çıkarma
 - `getProductPrice()` → Fiyat çıkarma (Türkçe format: 43.999,00 TL)
 - `getProductImage()` → Ürün görseli URL'i
-- `getOtherSellers()` → Diğer satıcıların fiyatları
+- `getOtherSellers()` → Diğer satıcıların fiyatları (Amazon adapter'ı boş liste döner)
 
 **Fiyat Parse Sistemi (parseTRPrice):**
 ```
@@ -104,7 +106,7 @@ Girdi: "43.999,50 TL"
   → parseFloat: 43999.5
 ```
 
-Eğer bilinen selector'lar fiyatı bulamazsa, fallback olarak sayfadaki tüm `<span>` elementlerini tarar ve TL fiyat pattern'ına uyan olanı alır.
+Trendyol adapter'ında bilinen selector'lar fiyatı bulamazsa, fallback olarak sayfadaki tüm `<span>` elementlerini tarar ve fiyat class'ı taşıyan bir elementin içindeki TL fiyat pattern'ına uyan değeri alır. Hepsiburada ve Amazon adapter'larında bu fallback yoktur.
 
 **Widget Oluşturma:**
 - Tüm DOM elementleri JavaScript ile oluşturulur (innerHTML kullanılmaz — XSS güvenliği)
@@ -130,6 +132,8 @@ slope < -1  → "Düşüş trendi — beklemeniz faydalı olabilir"
 slope > 1   → "Yükseliş trendi — erken almayı düşünün"
 diğer       → "Fiyat stabil görünüyor"
 ```
+
+Tahmin en az 3 veri noktası olduğunda gösterilir; yanında "güncel fiyat + eğim" olarak hesaplanan bir sonraki fiyat tahmini yazar.
 
 #### `background.js` — Service Worker (Arka Plan)
 
@@ -165,13 +169,18 @@ Fiyat kaydı isteği gelir
   chrome.storage.local'e kaydet (fallback)
 ```
 
-Storage key formatı: `price_{productId}`
+Storage key formatı: `price_{productId}` (örn. `price_ty-123456`)
 Her ürün için array: `[{ date: "2026-03-24", price: 43999, name: "Samsung..." }, ...]`
 
+Aynı gün içinde tekrar kayıt gelirse o günün kaydı güncellenir (günde bir veri noktası).
+
+> **Dikkat:** API'ye kayıt başarılı olursa veri yalnızca sunucuya yazılır, `chrome.storage.local`'e yazılmaz. Popup ve periyodik alarm kontrolü sadece yerel veriyi okuduğu için, sunucu çalışırken bu ikisi boş/etkisiz kalır.
+
 **Alarm Sistemi:**
-- Kullanıcı hedef fiyat belirler
-- `chrome.alarms` ile her 4 saatte bir kontrol yapılır
-- Fiyat hedefe düşerse `chrome.notifications` ile bildirim gönderilir
+- Kullanıcı widget'tan hedef fiyat belirler
+- Ürün sayfası her açıldığında (`TRACK_PRICE`) güncel fiyat hedefle karşılaştırılır
+- Ayrıca `chrome.alarms` ile her 4 saatte bir kontrol yapılır; bu kontrol sayfaları yeniden çekmez, yerel geçmişteki son kayıtlı fiyata bakar
+- Fiyat hedefe eşit veya altındaysa `chrome.notifications` ile bildirim gönderilir
 - Bildirim gönderildikten sonra alarm otomatik silinir
 
 **CSV Export:**
@@ -211,9 +220,13 @@ Uzantı ikonuna tıklanınca açılan panel:
 - Pro yükseltme / iptal etme
 - Desteklenen siteler listesi
 
+Popup yalnızca `chrome.storage.local` içindeki verileri listeler. Bilinen kısıtlar:
+- "Aktif ürün" kartı sekme URL'indeki `-p-{ID}` numarasını önek olmadan (`price_{ID}`) arar; kayıtlar önekli tutulduğu için bu kart şu an görünmez.
+- Listedeki bir ürüne tıklamak her zaman `https://www.trendyol.com/x/x-p-{id}` adresini açar; önekli ID'ler ve Hepsiburada/Amazon ürünleri için bu link doğru sayfaya gitmez.
+
 #### `server/server.js` — Backend API (Opsiyonel)
 
-Express.js tabanlı basit REST API. Veriler JSON dosyasında saklanır.
+Express.js tabanlı basit REST API. Veriler JSON dosyasında saklanır, son 90 gün tutulur. Port koda sabit yazılmıştır (3000); uzantı da `http://localhost:3000/api` adresine bağlanır. Sunucu kayıtlarında geçmiş girdileri ürün adı içermez (ad ürün seviyesinde tutulur).
 
 | Endpoint | Method | Açıklama |
 |---|---|---|
@@ -257,7 +270,10 @@ Veri dosyası: `server/data/prices.json`
 | Grafik | Son 7 gün | Son 30 gün |
 | Tahmin | Var | Var |
 | Taksit hesap | Var | Var |
-| Gelişmiş istatistik | — | Var |
+
+Kodda Free ile Pro arasındaki tek fark grafiğin gösterdiği gün sayısıdır. Widget'taki yükseltme kutusu "gelişmiş istatistikler" ve "₺29/ay" yazsa da ayrı bir Pro istatistiği yoktur.
+
+Ödeme entegrasyonu yoktur: "Pro'ya Yükselt" butonu `chrome.storage.local` içinde 30 gün geçerli bir `pro` aboneliği kaydeder, "iptal" ise planı tekrar `free` yapar. Bu şu haliyle bir demo/yer tutucu akıştır.
 
 ---
 
@@ -267,7 +283,7 @@ Veri dosyası: `server/data/prices.json`
 1. Chrome'da `chrome://extensions` adresine git
 2. Sağ üstten **Geliştirici modu**'nu aç
 3. **Paketlenmemiş öğe yükle** butonuna tıkla
-4. `chormeexten` klasörünü seç
+4. Depo klasörünü (`manifest.json` dosyasının bulunduğu klasör) seç
 
 ### Backend Sunucu (Opsiyonel)
 ```bash
@@ -278,7 +294,9 @@ npm start
 Sunucu `http://localhost:3000` adresinde çalışır.
 
 ### Demo Veri (Test İçin)
-Ürün sayfasında F12 → Console'a `seed-demo-data.js` içeriğini yapıştırıp Enter'a bas, sonra sayfayı yenile.
+`seed-demo-data.js`, son 31 gün için rastgele fiyatlar üretip `chrome.storage.local`'e yazar. `chrome.storage` normal sayfa konsolunda erişilebilir olmadığından, script'i çalıştırırken DevTools Console'daki bağlam seçicisinden uzantının content script bağlamını ("Fiyat Takip — Trendyol & Hepsiburada") seçmek gerekir. Sonra sayfayı yenile.
+
+> **Not:** Script yalnızca `-p-{ID}` içeren URL'lerde çalışır ve veriyi `price_{ID}` anahtarına önek olmadan yazar. Uzantı ise `price_ty-{ID}` / `price_hb-{ID}` anahtarlarını okuduğu için, script düzeltilmeden demo veri widget'ta görünmez. Ayrıca yerel sunucu çalışıyorsa widget geçmişi sunucudan okur.
 
 ---
 
@@ -287,7 +305,8 @@ Sunucu `http://localhost:3000` adresinde çalışır.
 - **Manifest V3**: Modern Chrome Extension standardı, Service Worker tabanlı
 - **XSS Koruması**: innerHTML kullanılmaz, tüm DOM elementleri programatik oluşturulur
 - **SPA Uyumluluğu**: MutationObserver ile sayfa içi navigasyon yakalanır
-- **Fallback Sistemi**: Sunucu erişilemezse localStorage otomatik devreye girer
-- **Veri Temizliği**: 90 günden eski kayıtlar otomatik silinir
+- **Fallback Sistemi**: Sunucu erişilemezse `chrome.storage.local` otomatik devreye girer
+- **Veri Temizliği**: Yeni kayıt yazılırken 90 günden eski kayıtlar silinir (hem yerelde hem sunucuda)
 - **Fiyat Parsing**: Türkçe format (nokta=binlik, virgül=ondalık) doğru parse edilir
-- **Selector Fallback**: Bilinen CSS selector'lar bulamazsa tüm span'ları tarayarak fiyat bulur
+- **Selector Fallback**: Trendyol'da bilinen CSS selector'lar bulamazsa span'ları tarayarak fiyat bulur
+- **Manifest adı**: `manifest.json` içindeki ad ve açıklama yalnızca Trendyol ve Hepsiburada'dan bahseder, ancak Amazon TR de host izinlerinde ve content script eşleşmelerinde vardır
